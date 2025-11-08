@@ -1,0 +1,105 @@
+# ============================
+# PYTHON GENERAL
+# ============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.log
+
+# Entorno virtual
+venv/
+.env
+*.env
+.env.*
+
+
+# ============================
+# DEPENDENCIAS & BUILD
+# ============================
+dist/
+build/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+*.whl
+
+
+# ============================
+# GOOGLE CLOUD / CREDENCIALES
+# ============================
+# NUNCA subir credenciales privadas
+service_account.json
+*.json.secret
+*.key
+*.pem
+
+# GCP auth cache
+.gcloud/
+.gcloud_token
+.terraform/
+*.tfstate
+
+
+# ============================
+# DATA & MODELOS
+# ============================
+data/raw/
+data/processed/
+data/embeddings/
+*.db
+*.sqlite3
+*.pickle
+
+
+# ============================
+# VECTOR DB / CACHE
+# ============================
+chroma/
+chroma.sqlite*
+index/
+*.index
+.cache/
+**/langchain_store/
+
+
+# ============================
+# NODE / FRONT OPTIONAL
+# ============================
+node_modules/
+npm-debug.log
+
+
+# ============================
+# EDITOR CONFIG
+# ============================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+
+# ============================
+# LOGS / REPORTES
+# ============================
+logs/
+*.log
+*.tmp
+
+
+# ============================
+# DOCKER / CLOUD RUN
+# ============================
+# Archivos generados en deploy
+deploy/*.bak
+deploy/*.tmp
+
+
+# ============================
+# TESTS Y COVERAGE
+# ============================
+.coverage
+htmlcov/
+pytest_cache/
