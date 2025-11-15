@@ -9,3 +9,5 @@ python-dotenv
 requests
 pydantic
 fire
+Flask
+pypdf
