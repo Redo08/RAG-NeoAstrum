@@ -2,7 +2,7 @@
  * Cliente API para comunicación con el backend RAG
  */
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = "http://localhost:5000";
 
 /**
  * Manejo de errores de API
@@ -10,7 +10,7 @@ const API_BASE_URL = 'http://localhost:8000';
 class APIError extends Error {
   constructor(message, status) {
     super(message);
-    this.name = 'APIError';
+    this.name = "APIError";
     this.status = status;
   }
 }
@@ -22,7 +22,7 @@ async function fetchAPI(endpoint, options = {}) {
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         ...options.headers,
       },
       ...options,
@@ -42,7 +42,7 @@ async function fetchAPI(endpoint, options = {}) {
       throw error;
     }
     throw new APIError(
-      'Error de conexión con el servidor. Verifica que el backend esté ejecutándose.',
+      "Error de conexión con el servidor. Verifica que el backend esté ejecutándose.",
       0
     );
   }
@@ -56,7 +56,7 @@ export const api = {
    * Verifica el estado del servidor
    */
   async healthCheck() {
-    return fetchAPI('/health');
+    return fetchAPI("/health");
   },
 
   /**
@@ -64,8 +64,8 @@ export const api = {
    * @param {string} question - Pregunta del usuario
    */
   async query(question) {
-    return fetchAPI('/query', {
-      method: 'POST',
+    return fetchAPI("/ask", {
+      method: "POST",
       body: JSON.stringify({ question }),
     });
   },
@@ -74,15 +74,24 @@ export const api = {
    * Obtiene ejemplos de consultas
    */
   async getExamples() {
-    return fetchAPI('/examples');
+    // Devolver ejemplos locales ya que el endpoint /examples no existe en Flask
+    return Promise.resolve({
+      examples: [
+        "¿Cuáles son los derechos fundamentales en Colombia?",
+        "¿Qué dice la constitución sobre la educación?",
+        "¿Cuáles son los derechos de los pueblos indígenas?",
+        "¿Qué es el habeas corpus?",
+        "¿Cómo se reforma la constitución?",
+      ],
+    });
   },
 
   /**
    * Reconstruye el vectorstore (admin)
    */
   async rebuildVectorstore() {
-    return fetchAPI('/rebuild-vectorstore', {
-      method: 'POST',
+    return fetchAPI("/rebuild-vectorstore", {
+      method: "POST",
     });
   },
 };

@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
-import api from './api';
+import { useState, useEffect, useRef } from "react";
+import api from "./api";
+import "./styles.css";
 
 function App() {
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [serverStatus, setServerStatus] = useState('checking');
+  const [serverStatus, setServerStatus] = useState("checking");
   const [examples, setExamples] = useState([]);
   const messagesEndRef = useRef(null);
 
@@ -18,15 +19,15 @@ function App() {
 
   // Auto-scroll al último mensaje
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const checkServerHealth = async () => {
     try {
       const health = await api.healthCheck();
-      setServerStatus(health.vectorstore_ready ? 'ready' : 'loading');
+      setServerStatus(health.status === "ok" ? "ready" : "loading");
     } catch (err) {
-      setServerStatus('offline');
+      setServerStatus("offline");
     }
   };
 
@@ -35,7 +36,7 @@ function App() {
       const data = await api.getExamples();
       setExamples(data.examples);
     } catch (err) {
-      console.error('Error cargando ejemplos:', err);
+      console.error("Error cargando ejemplos:", err);
     }
   };
 
@@ -44,11 +45,11 @@ function App() {
     if (!input.trim() || loading) return;
 
     const userMessage = input.trim();
-    setInput('');
+    setInput("");
     setError(null);
 
     // Agregar mensaje del usuario
-    setMessages(prev => [...prev, { type: 'user', content: userMessage }]);
+    setMessages((prev) => [...prev, { type: "user", content: userMessage }]);
 
     // Mostrar indicador de carga
     setLoading(true);
@@ -57,20 +58,20 @@ function App() {
       const response = await api.query(userMessage);
 
       // Agregar respuesta del asistente
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
         {
-          type: 'assistant',
+          type: "assistant",
           content: response.answer,
           sources: response.sources,
         },
       ]);
     } catch (err) {
       setError(err.message);
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
         {
-          type: 'error',
+          type: "error",
           content: err.message,
         },
       ]);
@@ -98,10 +99,10 @@ function App() {
           <div className="server-status">
             <span className={`status-indicator ${serverStatus}`}></span>
             <span className="status-text">
-              {serverStatus === 'ready' && 'Conectado'}
-              {serverStatus === 'loading' && 'Cargando...'}
-              {serverStatus === 'offline' && 'Desconectado'}
-              {serverStatus === 'checking' && 'Verificando...'}
+              {serverStatus === "ready" && "Conectado"}
+              {serverStatus === "loading" && "Cargando..."}
+              {serverStatus === "offline" && "Desconectado"}
+              {serverStatus === "checking" && "Verificando..."}
             </span>
           </div>
         </div>
@@ -138,19 +139,19 @@ function App() {
           {messages.map((msg, idx) => (
             <div key={idx} className={`message ${msg.type}`}>
               <div className="message-content">
-                {msg.type === 'user' && (
+                {msg.type === "user" && (
                   <div className="message-header">
                     <span className="message-icon">👤</span>
                     <span className="message-label">Tú</span>
                   </div>
                 )}
-                {msg.type === 'assistant' && (
+                {msg.type === "assistant" && (
                   <div className="message-header">
                     <span className="message-icon">⚖️</span>
                     <span className="message-label">Asistente Jurídico</span>
                   </div>
                 )}
-                {msg.type === 'error' && (
+                {msg.type === "error" && (
                   <div className="message-header">
                     <span className="message-icon">⚠️</span>
                     <span className="message-label">Error</span>
@@ -166,7 +167,9 @@ function App() {
                     {msg.sources.map((source, sidx) => (
                       <div key={sidx} className="source-card">
                         <div className="source-header">
-                          <span className="source-page">Página {source.page}</span>
+                          <span className="source-page">
+                            Página {source.page}
+                          </span>
                         </div>
                         <div className="source-content">{source.content}</div>
                       </div>
@@ -211,20 +214,21 @@ function App() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Escribe tu pregunta aquí..."
               className="input-field"
-              disabled={loading || serverStatus !== 'ready'}
+              disabled={loading || serverStatus !== "ready"}
             />
             <button
               type="submit"
               className="submit-btn"
-              disabled={loading || !input.trim() || serverStatus !== 'ready'}
+              disabled={loading || !input.trim() || serverStatus !== "ready"}
             >
-              {loading ? '⏳' : '📤'}
+              {loading ? "⏳" : "📤"}
             </button>
           </form>
 
-          {serverStatus === 'offline' && (
+          {serverStatus === "offline" && (
             <div className="error-banner">
-              ⚠️ No se puede conectar al servidor. Asegúrate de que el backend esté ejecutándose en http://localhost:8000
+              ⚠️ No se puede conectar al servidor. Asegúrate de que el backend
+              esté ejecutándose en http://localhost:8000
             </div>
           )}
         </div>
