@@ -103,3 +103,6 @@ deploy/*.tmp
 .coverage
 htmlcov/
 pytest_cache/
+
+
+deploy/service_account.json

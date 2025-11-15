@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+python-telegram-bot
+langchain
+langchain-google-vertexai
+google-cloud-aiplatform
+google-cloud-firestore
+python-dotenv
+requests
+pydantic
+fire
