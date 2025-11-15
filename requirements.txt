@@ -3,11 +3,16 @@ uvicorn
 python-telegram-bot
 langchain
 langchain-google-vertexai
+<<<<<<< HEAD
 langchain-groq
 groq
 google-cloud-aiplatform
 google-cloud-firestore
 google-cloud-storage>=3.0.0
+=======
+google-cloud-aiplatform
+google-cloud-firestore
+>>>>>>> 5c0a626c568768bc1ada79a8e5309a00877eddf7
 python-dotenv
 requests
 pydantic
