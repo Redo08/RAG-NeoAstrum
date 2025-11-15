@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+python-telegram-bot
+langchain
+langchain-google-vertexai
+langchain-groq
+groq
+google-cloud-aiplatform
+google-cloud-firestore
+google-cloud-storage>=3.0.0
+python-dotenv
+requests
+pydantic
+fire
