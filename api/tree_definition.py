@@ -1,0 +1,190 @@
+TREE={
+  "id": "root",
+  "nombre": "Finanzas en Colombia",
+  "descripcion": "Árbol de productos financieros para chatbot",
+  "categorias": [
+    {
+      "id": "prestamo",
+      "nombre": "Préstamo",
+      "descripcion": "Productos de financiación",
+      "subcategorias": [
+        {
+          "id": "prestamo_consumo",
+          "nombre": "Préstamo de Consumo",
+          "descripcion": "Créditos para necesidades personales",
+          "tipos": [
+            {
+              "id": "consumo_libre_inversion",
+              "nombre": "Préstamo de Libre Inversión",
+              "descripcion": "Préstamo sin destino específico",
+              "preguntas_relacionadas": [
+                "préstamo de libre inversión",
+                "crédito personal",
+                "crédito para cualquier cosa"
+              ]
+            },
+            {
+              "id": "consumo_vehiculo",
+              "nombre": "Crédito de Vehículo",
+              "descripcion": "Crédito para compra de carro",
+              "preguntas_relacionadas": [
+                "crédito para carro",
+                "financiar vehículo",
+                "préstamo para comprar carro"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "prestamo_hipotecario",
+          "nombre": "Préstamo Hipotecario",
+          "descripcion": "Créditos para vivienda",
+          "tipos": [
+            {
+              "id": "hipotecario_vis_no_vis",
+              "nombre": "Hipoteca VIS / No VIS",
+              "descripcion": "Créditos de vivienda VIS y No VIS",
+              "preguntas_relacionadas": [
+                "crédito de vivienda",
+                "hipoteca para apartamento",
+                "préstamo para comprar casa"
+              ]
+            },
+            {
+              "id": "hipotecario_leasing_habitacional",
+              "nombre": "Leasing Habitacional",
+              "descripcion": "Arriendo financiero de vivienda con opción de compra",
+              "preguntas_relacionadas": [
+                "qué es leasing habitacional",
+                "leasing para comprar vivienda",
+                "diferencia leasing e hipoteca"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inversion",
+      "nombre": "Inversión",
+      "descripcion": "Productos para generar rentabilidad",
+      "subcategorias": [
+        {
+          "id": "inversion_cdt",
+          "nombre": "CDT",
+          "descripcion": "Certificados de Depósito a Término",
+          "tipos": [
+            {
+              "id": "cdt_tasa_fija",
+              "nombre": "CDT a Tasa Fija",
+              "descripcion": "Tasa fija durante todo el período",
+              "preguntas_relacionadas": [
+                "cdt tasa fija",
+                "rendimiento cdt fijo",
+                "invertir en cdt fijo"
+              ]
+            },
+            {
+              "id": "cdt_tasa_variable",
+              "nombre": "CDT a Tasa Variable",
+              "descripcion": "Tasa indexada a DTF o IBR",
+              "preguntas_relacionadas": [
+                "cdt tasa variable",
+                "cdt ligado a DTF",
+                "cdt indexado a IBR"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "inversion_acciones",
+          "nombre": "Acciones",
+          "descripcion": "Participación en empresas listadas",
+          "tipos": [
+            {
+              "id": "acciones_ordinarias",
+              "nombre": "Acciones Ordinarias",
+              "descripcion": "Acciones con derecho a voto",
+              "preguntas_relacionadas": [
+                "acciones ordinarias",
+                "comprar acciones comunes",
+                "invertir en bolsa"
+              ]
+            },
+            {
+              "id": "acciones_preferenciales",
+              "nombre": "Acciones Preferenciales",
+              "descripcion": "Acciones sin voto pero con dividendos prioritarios",
+              "preguntas_relacionadas": [
+                "acciones preferenciales",
+                "acciones que pagan más dividendos",
+                "preferenciales vs ordinarias"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "renta",
+      "nombre": "Renta",
+      "descripcion": "Productos de alquiler o arriendo",
+      "subcategorias": [
+        {
+          "id": "renta_arriendo",
+          "nombre": "Arriendo",
+          "descripcion": "Alquiler de bienes inmuebles",
+          "tipos": [
+            {
+              "id": "arriendo_residencial",
+              "nombre": "Arriendo de Vivienda",
+              "descripcion": "Alquiler de casas y apartamentos",
+              "preguntas_relacionadas": [
+                "arriendo de vivienda",
+                "rentar apartamento",
+                "buscar casa en arriendo"
+              ]
+            },
+            {
+              "id": "arriendo_comercial",
+              "nombre": "Arriendo de Local Comercial",
+              "descripcion": "Local para negocios",
+              "preguntas_relacionadas": [
+                "arriendo de local",
+                "local comercial",
+                "cuánto vale arrendar un local"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "renta_leasing",
+          "nombre": "Leasing",
+          "descripcion": "Arriendo financiero",
+          "tipos": [
+            {
+              "id": "leasing_vehicular",
+              "nombre": "Leasing Vehicular",
+              "descripcion": "Arrendamiento financiero para carro",
+              "preguntas_relacionadas": [
+                "leasing para carro",
+                "arrendar carro con opción de compra",
+                "leasing vehicular"
+              ]
+            },
+            {
+              "id": "leasing_operativo",
+              "nombre": "Leasing Operativo",
+              "descripcion": "Arrendamiento sin opción de compra",
+              "preguntas_relacionadas": [
+                "leasing operativo",
+                "arrendar maquinaria",
+                "leasing sin opción de compra"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
