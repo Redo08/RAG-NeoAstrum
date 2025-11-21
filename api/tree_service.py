@@ -291,9 +291,63 @@ def update_session_node(session_id: str, node_id: str):
             "$set": {
                 "current_node_id": node_id,
                 "updated_at": datetime.utcnow()
+            },
+            "$unset": {
+                "pending_restart": ""  # Limpiar flag de reinicio pendiente
             }
         }
     )
+
+
+def set_pending_restart(session_id: str):
+    """Marca la sesión como pendiente de confirmación de reinicio"""
+    from bson import ObjectId
+    sessions_collection.update_one(
+        {"_id": ObjectId(session_id)},
+        {
+            "$set": {
+                "pending_restart": True,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+
+
+def check_restart_confirmation(user_message: str) -> bool:
+    """Verifica si el usuario confirma el reinicio"""
+    confirmations = ["sí", "si", "yes", "ok", "dale", "claro", "confirmar", "reiniciar", "empezar de nuevo"]
+    negations = ["no", "nope", "continuar", "seguir"]
+    
+    message_lower = user_message.lower().strip()
+    
+    # Verificar confirmaciones
+    if any(conf in message_lower for conf in confirmations):
+        return True
+    
+    # Verificar negaciones
+    if any(neg in message_lower for neg in negations):
+        return False
+    
+    # Usar LLM para casos ambiguos
+    prompt = f"""El usuario respondió: "{user_message}"
+
+Se le preguntó si quiere reiniciar la conversación y volver al inicio.
+
+¿El usuario está confirmando que SÍ quiere reiniciar?
+
+Responde SOLO con "SI" o "NO"."""
+    
+    messages = [
+        SystemMessage(content=prompt),
+        HumanMessage(content=user_message)
+    ]
+    
+    try:
+        result = LLM.invoke(messages)
+        response = result.content.strip().upper()
+        return "SI" in response or "YES" in response
+    except:
+        return False
 
 
 def save_response(session_id: str, question_node_id: str, user_response: str, selected_child_id: str):
@@ -327,9 +381,11 @@ Dado el mensaje del usuario, debes identificar cuál de las siguientes opciones 
 
 {options_text}
 
-Responde ÚNICAMENTE con el número de la opción (1, 2, 3, etc.) que mejor coincida.
-Si el usuario hace una pregunta no relacionada (como "¿qué día es hoy?"), responde con "OFFTOPIC".
-Si no estás seguro o ninguna opción coincide claramente, responde con "UNCLEAR"."""
+Responde ÚNICAMENTE con una de estas opciones:
+- El número de la opción (1, 2, 3, etc.) que mejor coincida
+- "OFFTOPIC" si es una pregunta casual no relacionada (como "¿qué día es hoy?", "¿cómo estás?", etc.)
+- "CHANGE_TOPIC" si el usuario menciona un producto financiero diferente que NO está en las opciones actuales
+- "UNCLEAR" si no estás seguro o ninguna opción coincide claramente"""
     
     messages = [
         SystemMessage(content=system_prompt),
@@ -342,6 +398,8 @@ Si no estás seguro o ninguna opción coincide claramente, responde con "UNCLEAR
         
         if response == "OFFTOPIC":
             return {"type": "offtopic"}
+        elif response == "CHANGE_TOPIC":
+            return {"type": "change_topic"}
         elif response == "UNCLEAR":
             return {"type": "unclear"}
         else:
@@ -420,6 +478,31 @@ def process_message(session_id: Optional[str], user_message: str, user_id: str =
     if not session:
         return {"error": "Sesión no encontrada"}
     
+    # Verificar si hay un reinicio pendiente
+    if session.get("pending_restart"):
+        if check_restart_confirmation(user_message):
+            # Usuario confirma reinicio
+            update_session_node(session_id, "root")
+            root_node = FINANCIAL_TREE
+            children = get_children(root_node)
+            question = generate_question(root_node, children)
+            
+            return {
+                "session_id": session_id,
+                "response": f"¡Perfecto! Empecemos de nuevo. {question}",
+                "current_node": root_node,
+                "options": [{"id": c["id"], "nombre": c["nombre"]} for c in children],
+                "restarted": True
+            }
+        else:
+            # Usuario no quiere reiniciar, continuar con el flujo normal
+            from bson import ObjectId
+            sessions_collection.update_one(
+                {"_id": ObjectId(session_id)},
+                {"$unset": {"pending_restart": ""}}
+            )
+            # Continuar procesando el mensaje actual
+    
     current_node_id = session["current_node_id"]
     current_node = get_node_by_id(current_node_id)
     
@@ -482,6 +565,20 @@ def process_message(session_id: Optional[str], user_message: str, user_id: str =
     
     # Detectar coincidencia
     match_result = detect_child_match(user_message, children)
+    
+    if match_result["type"] == "change_topic":
+        # Usuario quiere cambiar a otro tema financiero
+        set_pending_restart(session_id)
+        return {
+            "session_id": session_id,
+            "response": "Veo que te interesa otro producto financiero. ¿Quieres que empecemos de nuevo desde el inicio para explorar otras opciones?",
+            "current_node": current_node,
+            "pending_restart": True,
+            "options": [
+                {"id": "confirm", "nombre": "Sí, empezar de nuevo"},
+                {"id": "cancel", "nombre": "No, continuar aquí"}
+            ]
+        }
     
     if match_result["type"] == "offtopic":
         # Pregunta fuera de contexto
