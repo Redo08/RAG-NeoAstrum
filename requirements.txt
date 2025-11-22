@@ -5,4 +5,5 @@ flask==3.0.0
 langchain==0.3.14
 langchain-google-genai==2.0.8
 pymongo==4.10.1
+langchain-mongodb
 google-generativeai==0.8.3

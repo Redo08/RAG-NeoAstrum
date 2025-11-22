@@ -2,14 +2,18 @@ from flask import Flask, request, jsonify
 from typing import Any, Dict
 import sys
 from pathlib import Path
-from .database import Database  # <--- Importamos nuestra conexión
+from database import Database  # <--- Importamos nuestra conexión
+from werkzeug.datastructures import FileStorage
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 try:
     from api.tree_service import start_conversation, process_message, get_session
+    from api.rag_service import _process_and_index_file
 except ModuleNotFoundError:
     from tree_service import start_conversation, process_message, get_session
+    from rag_service import _process_and_index_file
+
 
 
 app = Flask(__name__)
@@ -45,6 +49,59 @@ def chat_start() -> Any:
         return jsonify(result), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/chat/upload", methods=["POST"])
+def rag_upload_docs() -> Any:
+    """
+    Sube múltiples archivos (.pdf o .txt) y los indexa en el servicio RAG (MongoDB).
+    Los archivos deben enviarse en el cuerpo de la solicitud (multipart/form-data)
+    con la clave 'files[]'.
+    """
+    
+    try:
+        if "files[]" not in request.files:
+            return jsonify({"error": "No se encontraron archivos en 'files[]'"}), 400
+
+        files: list[FileStorage] = request.files.getlist("files[]")
+        
+        if not files:
+            return jsonify({"error": "La lista de archivos está vacía"}), 400
+        
+        indexed_files_count = 0
+        indexed_chunks_count = 0
+        
+        for file in files:
+            if file.filename == "":
+                continue # Saltar archivos sin nombre
+            
+            # Verificar extensiones permitidas
+            allowed_extensions = {".pdf", ".txt"}
+            file_extension = Path(file.filename).suffix.lower()
+            
+            if file_extension not in allowed_extensions:
+                print(f"🚫 Archivo omitido: {file.filename} (Extensión no soportada)")
+                continue
+
+            # Procesar e indexar
+            print(f"⏳ Procesando e indexando: {file.filename}")
+            splits = _process_and_index_file(file)
+            indexed_files_count += 1
+            indexed_chunks_count += len(splits)
+
+        if indexed_files_count == 0:
+             return jsonify({"error": "No se procesó ningún archivo. Asegúrate de que sean .pdf o .txt"}), 400
+
+        return jsonify({
+            "message": "Archivos subidos e indexados correctamente",
+            "files_processed": indexed_files_count,
+            "chunks_indexed": indexed_chunks_count
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        print(f"❌ ERROR CRÍTICO en /rag/upload: {e}")
+        return jsonify({"error": "Error interno del servidor al procesar los archivos"}), 500
 
 
 @app.route("/chat/message", methods=["POST"])

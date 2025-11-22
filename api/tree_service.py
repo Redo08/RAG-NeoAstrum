@@ -14,7 +14,7 @@ from bson.objectid import ObjectId # <--- ¡NUEVO! Para usar ObjectId más fáci
 # Configuración
 
 if not os.environ.get("GOOGLE_API_KEY"):
-    os.environ["GOOGLE_API_KEY"] = "AIzaSyCvYqtwqUNuvzqGhEdhC4f7DRJ3qBccncQ"
+    os.environ["GOOGLE_API_KEY"] = "AIzaSyDYG9sBJ8btds4TaFhd1C0ZkFwA2Xc8224"
 
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = "chatbot_financiero"
