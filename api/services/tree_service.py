@@ -10,7 +10,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 import requests # <--- ¡NUEVO!
 from bson.objectid import ObjectId # <--- ¡NUEVO! Para usar ObjectId más fácil
-
+# 5. Guardar interacción en MongoDB
+from ..database import Database
 
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = "chatbot_financiero"
@@ -332,8 +333,7 @@ def process_message(session_id: str, message: str, user_id: str = "anonymous") -
             bot_response = tree_response["response"]
         """
         
-        # 5. Guardar interacción en MongoDB
-        from database import Database
+
         responses_collection = Database.get_collection("responses")
         
         response_doc = {
