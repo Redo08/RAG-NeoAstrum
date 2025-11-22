@@ -135,7 +135,17 @@ def _process_and_index_file(file: FileStorage) -> List[Document]:
     docs = loader.load()
 
     # 3. Dividir en Chunks
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500, 
+        chunk_overlap=50,
+        separators=[
+            "\n\n",  # Intenta dividir por salto de párrafo (espacio entre párrafos)
+            "\n",    # Luego, por salto de línea simple
+            ".",     # Luego, por punto final de frase
+            " ",     # Finalmente, por espacio
+            ""       # Fallback por caracter
+        ]
+    )
     splits = splitter.split_documents(docs)
 
     # 4. Asignar metadatos útiles
