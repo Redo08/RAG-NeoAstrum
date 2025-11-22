@@ -22,11 +22,6 @@ Sistema de Recuperación y Generación Aumentada (RAG) desarrollado para proporc
 - **python-dotenv** - Gestión de variables de entorno
 - **Gunicorn 22.0.0** - Servidor WSGI para producción
 
-### Frontend
-
-- **React 18.2.0** - Biblioteca de UI
-- **Vite 5.0.0** - Build tool y dev server
-- **JavaScript/JSX** - Lenguaje de desarrollo
 
 ### Testing
 
@@ -232,20 +227,6 @@ pip install -r requirements.txt
 python -m api.app
 ```
 
-### Frontend Setup
-
-```powershell
-cd frontend
-
-# Instalar dependencias
-npm install
-
-# Ejecutar servidor de desarrollo
-npm run dev
-
-# Build para producción
-npm run build
-```
 
 ## 🎯 Endpoints API
 
@@ -311,17 +292,6 @@ Esta sección está diseñada para documentar y evaluar el rendimiento del siste
 
 ---
 
-### 📝 Plantilla de Evaluación
-
-Para cada pregunta probada, documenta los siguientes aspectos:
-
-| #   | Pregunta | Funciona | Precisión       | Fuentes | Observaciones |
-| --- | -------- | -------- | --------------- | ------- | ------------- |
-| 1   |          | ✅/❌    | Alta/Media/Baja | X docs  |               |
-| 2   |          | ✅/❌    | Alta/Media/Baja | X docs  |               |
-
----
-
 ### Categorías de Preguntas a Evaluar
 
 #### 1. Preguntas Directas (Factual Retrieval)
@@ -348,37 +318,8 @@ Para cada pregunta probada, documenta los siguientes aspectos:
 - [ ] ¿Cómo se relaciona el artículo X con el artículo Y?
 - [ ] ¿Qué cambió entre la versión anterior y actual?
 
-**Criterios de éxito**:
 
-- Recupera múltiples documentos relevantes
-- Sintetiza información de varias fuentes
-- Score promedio > 0.6
 
----
-
-#### 3. Preguntas Complejas (Multi-hop Reasoning)
-
-**Objetivo**: Probar razonamiento sobre múltiples documentos
-
-- [ ] Si se cumple la condición X, ¿qué artículos aplican?
-- [ ] ¿Cuáles son las consecuencias legales de...?
-- [ ] ¿Qué procedimiento debe seguirse en el caso de...?
-
-**Criterios de éxito**:
-
-- Integra información de 3+ fragmentos
-- Razonamiento lógico coherente
-- Menciona todas las fuentes relevantes
-
----
-
-#### 4. Preguntas Ambiguas
-
-**Objetivo**: Evaluar manejo de consultas poco claras
-
-- [ ] ¿Qué dice sobre derechos?
-- [ ] Háblame de las obligaciones
-- [ ] ¿Cómo funciona el proceso?
 
 **Criterios de éxito**:
 
