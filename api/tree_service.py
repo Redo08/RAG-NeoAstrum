@@ -280,253 +280,104 @@ Tu respuesta debe:
     result = LLM.invoke(messages)
     return result.content.strip()
 
-
-def process_message(session_id: Optional[str], user_message: str, user_id: str = "anonymous") -> Dict[str, Any]:
-    """Procesa el mensaje del usuario y navega el árbol"""
-    # Si no hay session_id, crear una nueva sesión
-    if not session_id:
-        session_id = create_session(user_id)
-        is_new_session = True
-    else:
-        is_new_session = False
-    
-    # Obtener sesión
-    session = get_session(session_id)
-    if not session:
-        return {"error": "Sesión no encontrada"}
-    
-    # Verificar si hay un reinicio pendiente
-    if session.get("pending_restart"):
-        if check_restart_confirmation(user_message):
-            # Usuario confirma reinicio
-            update_session_node(session_id, "root")
-            root_node = FINANCIAL_TREE
-            children = get_children(root_node)
-            question = generate_question(root_node, children)
-            
-            return {
-                "session_id": session_id,
-                "response": f"¡Perfecto! Empecemos de nuevo. {question}",
-                "current_node": root_node,
-                "options": [{"id": c["id"], "nombre": c["nombre"]} for c in children],
-                "restarted": True
-            }
+def process_message(session_id: str, message: str, user_id: str = "anonymous") -> Dict[str, Any]:
+    """
+    Procesa un mensaje del usuario.
+    Integra búsqueda RAG + árbol de decisión + LLM.
+    """
+    try:
+        # 1. Validar o crear sesión
+        if not session_id:
+            # Crear nueva sesión automáticamente
+            new_session = start_conversation(user_id)
+            session_id = new_session["session_id"]
+            print(f"🆕 Nueva sesión creada: {session_id}")
+        
+        # 2. Obtener sesión existente
+        session = get_session(session_id)
+        if not session:
+            return {"error": "Sesión no encontrada"}
+        
+        # 3. **AQUÍ INTEGRAMOS RAG** - Buscar respuesta usando documentos
+        from rag_service import answer_question
+        
+        print(f"🔍 Buscando respuesta RAG para: '{message}'")
+        rag_result = answer_question(
+            question=message,
+            k=3,  # Top 3 documentos más relevantes
+            min_score=0.5  # Score mínimo de similitud
+        )
+        
+        if "error" in rag_result:
+            print(f"⚠️ Error en RAG: {rag_result['error']}")
+            # Continuar con árbol de decisión tradicional
+            bot_response = "No pude procesar tu pregunta correctamente."
+            sources = []
         else:
-            # Usuario no quiere reiniciar, continuar con el flujo normal
-            from bson import ObjectId
-            sessions_collection.update_one(
-                {"_id": ObjectId(session_id)},
-                {"$unset": {"pending_restart": ""}}
-            )
-            # Continuar procesando el mensaje actual
-    
-    current_node_id = session["current_node_id"]
-    current_node = get_node_by_id(current_node_id)
-    
-    if not current_node:
-        return {"error": "Nodo actual no encontrado"}
-    
-    # Si es una nueva sesión, dar bienvenida
-    if is_new_session:
-        children = get_children(current_node)
-        question = generate_question(current_node, children)
+            bot_response = rag_result["answer"]
+            sources = rag_result.get("sources", [])
+            print(f"✅ Respuesta RAG generada con {len(sources)} fuentes")
         
-        # También procesar el mensaje inicial del usuario
-        match_result = detect_child_match(user_message, children)
+        # 4. **OPCIONAL**: También puedes usar tu árbol de decisión
+        # Si quieres combinar RAG + árbol, descomenta esto:
+        """
+        current_node_id = session.get("current_node_id", "root")
+        tree_response = get_tree_response(current_node_id, message)
         
-        if match_result["type"] == "match":
-            # Si el primer mensaje ya tiene una intención clara, avanzar
-            selected_child = match_result["child"]
-            save_response(session_id, current_node_id, user_message, selected_child["id"])
-            update_session_node(session_id, selected_child["id"])
-            
-            new_children = get_children(selected_child)
-            if new_children:
-                next_question = generate_question(selected_child, new_children)
-                return {
-                    "session_id": session_id,
-                    "response": f"¡Hola! Entiendo que te interesa {selected_child['nombre']}. {next_question}",
-                    "current_node": selected_child,
-                    "options": [{"id": c["id"], "nombre": c["nombre"]} for c in new_children],
-                    "is_new": True
-                }
-            else:
-                return {
-                    "session_id": session_id,
-                    "response": f"¡Hola! Te interesa: {selected_child['nombre']}. {selected_child['descripcion']}. ¿Necesitas más información sobre este producto?",
-                    "current_node": selected_child,
-                    "is_leaf": True,
-                    "is_new": True
-                }
-        else:
-            # Primer mensaje no claro, hacer pregunta de bienvenida
-            return {
-                "session_id": session_id,
-                "response": f"¡Hola! Soy tu asistente financiero. {question}",
-                "current_node": current_node,
-                "options": [{"id": c["id"], "nombre": c["nombre"]} for c in children],
-                "is_new": True
-            }
-    
-    # Obtener hijos
-    children = get_children(current_node)
-    
-    # --- Lógica de NODO HOJA (Captura de Leads) ---
-    if not children:
-        # 1. Si el paso de captura NO está iniciado, preguntar si quiere más info
-        if session.get("data_capture_step") is None:
-            set_data_capture_step(session_id, 1)
-            return {
-                "session_id": session_id,
-                "response": f"¡Has encontrado el producto! Te interesa: {current_node['nombre']}. {current_node['descripcion']}. ¿Quieres que un asesor se ponga en contacto contigo para darte más detalles?",
-                "current_node": current_node,
-                "is_leaf": True,
-                "options": [
-                    {"id": "confirm_data", "nombre": "Sí, quiero contacto"},
-                    {"id": "cancel_data", "nombre": "No, gracias"}
-                ]
-            }
+        # Combinar respuestas o elegir una según lógica
+        if tree_response.get("is_final"):
+            bot_response = tree_response["response"]
+        """
         
-        # 2. Si el usuario ya está en el paso 1 (preguntado)
-        elif session.get("data_capture_step") == 1:
-            message_lower = user_message.lower().strip()
-            
-            # --- Manejo de la Confirmación/Rechazo ---
-            if any(keyword in message_lower for keyword in ["sí", "si", "quiero contacto", "aceptar", "dale", "ok"]):
-                # El usuario acepta, pedir los datos formalmente
-                set_data_capture_step(session_id, 1) # Lo mantenemos en el paso 1 esperando los datos
-                return {
-                    "session_id": session_id,
-                    "response": "¡Excelente! Por favor, envíame tu **Nombre**, **Teléfono** y **Correo Electrónico** separados por comas. Ejemplo: *Juan Pérez, 3001234567, juan.perez@email.com*",
-                    "current_node": current_node
-                }
-            
-            elif any(keyword in message_lower for keyword in ["no", "no gracias", "cancelar", "seguir aquí"]):
-                # El usuario rechaza, limpiar el estado y seguir normal
-                sessions_collection.update_one(
-                    {"_id": ObjectId(session_id)},
-                    {"$unset": {"data_capture_step": ""}} # Limpiar el paso
-                )
-                return {
-                    "session_id": session_id,
-                    "response": "¿De acuerdo. ¿Necesitas ayuda con algún otro producto o pregunta general?",
-                    "current_node": current_node
-                }
-                
-            # --- Manejo de la Recepción de Datos (Si no es una confirmación ni un rechazo) ---
-            # Asumimos que si no es un sí/no, el usuario está enviando los datos
-            
-            # Intentar parsear el mensaje del usuario para obtener Name, Phone, Email
-            parts = [p.strip() for p in user_message.split(',') if p.strip()]
-            
-            if len(parts) >= 3:
-                name, phone, email = parts[0], parts[1], parts[2]
-                
-                # Intentar enviar la notificación
-                lead_data = {"name": name, "phone": phone, "email": email}
-                success = send_lead_notification(session_id, lead_data, current_node)
-                
-                # Marcar sesión como completada (o limpiar el step)
-                set_data_capture_step(session_id, 2)
-                
-                if success:
-                    return {
-                        "session_id": session_id,
-                        "response": f"¡Gracias, {name}! Tus datos y el resumen del producto ({current_node['nombre']}) han sido enviados. Un asesor te contactará pronto. ¿En qué más puedo ayudarte?",
-                        "current_node": current_node,
-                        "is_complete": True
+        # 5. Guardar interacción en MongoDB
+        from database import Database
+        responses_collection = Database.get_collection("responses")
+        
+        response_doc = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "user_message": message,
+            "bot_response": bot_response,
+            "sources_used": sources,
+            "timestamp": datetime.utcnow(),
+            "question_node_id": session.get("current_node_id"),  # Para analytics
+        }
+        
+        responses_collection.insert_one(response_doc)
+        
+        # 6. Actualizar sesión
+        sessions_collection = Database.get_collection("sessions")
+        sessions_collection.update_one(
+            {"session_id": session_id},
+            {
+                "$set": {
+                    "updated_at": datetime.utcnow(),
+                    "last_message": message
+                },
+                "$push": {
+                    "messages": {
+                        "role": "user",
+                        "content": message,
+                        "timestamp": datetime.utcnow()
                     }
-                else:
-                    return {
-                        "session_id": session_id,
-                        "response": "Hubo un error al enviar tus datos. Por favor, inténtalo más tarde. Disculpa las molestias.",
-                        "current_node": current_node
-                    }
-            else:
-                # El usuario aceptó pero no envió los datos correctamente
-                return {
-                    "session_id": session_id,
-                    "response": "No pude extraer los 3 datos requeridos (Nombre, Teléfono, Correo). Por favor, envíalos separados por comas. Ejemplo: *Juan Pérez, 3001234567, juan.perez@email.com*",
-                    "current_node": current_node
                 }
-        
-        # 3. Si el usuario ya completó o no quiere enviar más
-        else:
-            return {
-                "session_id": session_id,
-                "response": "¿Necesitas ayuda con algún otro producto financiero? Si quieres empezar de nuevo, solo di 'reiniciar'.",
-                "current_node": current_node
             }
-            
-    # Detectar coincidencia
-    match_result = detect_child_match(user_message, children)
-    
-    if match_result["type"] == "change_topic":
-        # Usuario quiere cambiar a otro tema financiero
-        set_pending_restart(session_id)
+        )
+        
+        # 7. Retornar respuesta completa
         return {
             "session_id": session_id,
-            "response": "Veo que te interesa otro producto financiero. ¿Quieres que empecemos de nuevo desde el inicio para explorar otras opciones?",
-            "current_node": current_node,
-            "pending_restart": True,
-            "options": [
-                {"id": "confirm", "nombre": "Sí, empezar de nuevo"},
-                {"id": "cancel", "nombre": "No, continuar aquí"}
-            ]
+            "response": bot_response,
+            "sources": sources,  # Fuentes usadas para la respuesta
+            "message_id": str(response_doc.get("_id")),
+            "timestamp": datetime.utcnow().isoformat()
         }
-    
-    if match_result["type"] == "offtopic":
-        # Pregunta fuera de contexto
-        response = handle_offtopic(user_message, current_node)
-        return {
-            "session_id": session_id,
-            "response": response,
-            "current_node": current_node,
-            "is_offtopic": True
-        }
-    
-    elif match_result["type"] == "unclear":
-        # No está claro, volver a preguntar
-        question = generate_question(current_node, children)
-        return {
-            "session_id": session_id,
-            "response": f"No estoy seguro de entender. {question}",
-            "current_node": current_node,
-            "options": [{"id": c["id"], "nombre": c["nombre"]} for c in children]
-        }
-    
-    elif match_result["type"] == "match":
-        # Coincidencia encontrada
-        selected_child = match_result["child"]
         
-        # Guardar respuesta
-        save_response(session_id, current_node_id, user_message, selected_child["id"])
-        
-        # Actualizar sesión
-        update_session_node(session_id, selected_child["id"])
-        
-        # Obtener nuevos hijos
-        new_children = get_children(selected_child)
-        
-        if new_children:
-            question = generate_question(selected_child, new_children)
-            return {
-                "session_id": session_id,
-                "response": question,
-                "current_node": selected_child,
-                "options": [{"id": c["id"], "nombre": c["nombre"]} for c in new_children]
-            }
-        else:
-            # Nodo hoja alcanzado
-            return {
-                "session_id": session_id,
-                "response": f"Perfecto! Te interesa: {selected_child['nombre']}. {selected_child['descripcion']}. ¿Necesitas más información sobre este producto?",
-                "current_node": selected_child,
-                "is_leaf": True
-            }
-    
-    return {"error": "Error al procesar mensaje"}
-
+    except Exception as e:
+        print(f"❌ Error en process_message: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
 
 def start_conversation(user_id: str = "anonymous") -> Dict[str, Any]:
     """Inicia una nueva conversación"""

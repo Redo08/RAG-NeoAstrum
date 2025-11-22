@@ -152,48 +152,78 @@ def _process_and_index_file(file: FileStorage) -> List[Document]:
 _build_pipeline()
 
 
-# Función para responder preguntas (sin cambios importantes)
-def answer_question(question: str) -> Dict[str, Any]:
-    """Busca en el Vector Store y genera una respuesta usando el LLM."""
+def answer_question(question: str, k: int = 3, min_score: float = 0.5) -> Dict[str, Any]:
+    """
+    Busca documentos similares y genera una respuesta usando el LLM.
+    Unifica búsqueda vectorial + generación de respuesta.
+    """
     if not question or not question.strip():
         return {"error": "Question is required"}
 
-    # 1. Recuperar fuentes desde MongoDB Atlas Vector Search
+    print(f"💬 Respondiendo pregunta: '{question}'")
+    
     try:
-        # Usa similarity_search del vector store
-        sources = VECTOR_STORE.similarity_search(question, k=3) 
-    except Exception as e:
-        print(f"Error en la búsqueda de similitud: {e}")
-        sources = []
+        # 1. Búsqueda vectorial con tu función corregida
+        sources = search_similar_documents(
+            query_text=question,
+            k=k,
+            min_score=min_score
+        )
+        
+        if not sources:
+            # Si no hay fuentes, el LLM responde sin contexto
+            print("⚠️ No se encontraron documentos relevantes, respondiendo sin contexto")
+            context_text = "No se encontró información específica en los documentos indexados."
+        else:
+            # 2. Construir contexto desde los resultados
+            context_parts = []
+            for i, doc in enumerate(sources, 1):
+                context_parts.append(
+                    f"[Documento {i} - Score: {doc['score']}]\n{doc['content']}"
+                )
+            context_text = "\n\n".join(context_parts)
+            print(f"✅ Contexto construido desde {len(sources)} documentos")
 
-    # 2. Construir contexto
-    context_docs = sources
-    context_text = "\n\n".join(doc.page_content for doc in context_docs)
+        # 3. Componer mensajes para el LLM
+        system_prompt = (
+            "Eres un asistente financiero experto. Responde de forma clara y concisa "
+            "basándote EXCLUSIVAMENTE en el contexto proporcionado. "
+            "Si la información no está en el contexto, indícalo claramente."
+        )
+        
+        messages = [
+            SystemMessage(content=f"{system_prompt}\n\n### CONTEXTO:\n{context_text[:15000]}"),
+            HumanMessage(content=question),
+        ]
 
-    # 3. Componer mensajes y llamar al LLM
-    messages = [
-        SystemMessage(content=SYSTEM_PROMPT + "\n\nContexto:\n" + context_text[:15000]),
-        HumanMessage(content=question),
-    ]
+        # 4. Llamar al LLM
+        print("🤖 Invocando LLM...")
+        result = LLM.invoke(messages)
+        response = getattr(result, "content", str(result))
+        print(f"✅ Respuesta generada ({len(response)} caracteres)")
 
-    result = LLM.invoke(messages)
-    response = getattr(result, "content", str(result))
+        # 5. Serializar fuentes para el frontend
+        serialized_sources = [
+            {
+                "content": doc["content"][:500],  # Limitar tamaño
+                "metadata": doc["metadata"],
+                "score": doc["score"]
+            }
+            for doc in sources
+        ]
 
-    # 4. Serializar fuentes
-    serialized_sources = [
-        {
-            "metadata": doc.metadata,
-            "content": doc.page_content[:5000],
+        return {
+            "answer": response,
+            "sources": serialized_sources,
+            "total_sources": len(sources)
         }
-        for doc in sources
-    ]
-
-    return {
-        "answer": response,
-        "sources": serialized_sources,
-    }
-
-
+        
+    except Exception as e:
+        print(f"❌ Error en answer_question: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": f"Error al procesar la pregunta: {str(e)}"}
+        
 # ============================================
 # AÑADE ESTO A TU rag_service.py
 # ============================================
