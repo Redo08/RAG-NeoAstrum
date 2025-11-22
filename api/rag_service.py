@@ -217,15 +217,6 @@ def search_similar_documents(
     """
     Busca documentos similares usando similitud de coseno.
     Compatible con MongoDB local (sin necesidad de Atlas).
-    
-    Args:
-        query_text: Texto de consulta para la búsqueda
-        k: Número de resultados a retornar
-        source_filter: Filtrar por nombre de archivo específico (opcional)
-        min_score: Score mínimo de similitud (opcional)
-        
-    Returns:
-        Lista de documentos con sus scores de similitud
     """
     if not VECTOR_STORE:
         raise RuntimeError("RAG pipeline no inicializado.")
@@ -239,9 +230,10 @@ def search_similar_documents(
         collection = db[MONGODB_COLLECTION]
         
         print("----------------------------")
-        print(f"🌐 Conectado a MongoDB: {MONGODB_URI}, DB: {DB_NAME}, Colección: {MONGODB_COLLECTION}")
-        # Verificar si hay documentos
-        total_docs = collection.count_documents()
+        print(f"🌐 Conectado a MongoDB: {DB_NAME}.{MONGODB_COLLECTION}")
+        
+        # ✅ CORRECCIÓN: Agregar filtro vacío
+        total_docs = collection.count_documents({})
         print(f"📊 Total de documentos en la colección: {total_docs}")
         
         if total_docs == 0:
@@ -253,12 +245,12 @@ def search_similar_documents(
         query_embedding = embeddings_model.embed_query(query_text)
         print(f"✅ Embedding generado (dimensiones: {len(query_embedding)})")
         
-        # Construir filtro de búsqueda
+        # ✅ CORRECCIÓN: source_filename está en raíz, no en metadata
         filter_query = {}
         if source_filter:
-            filter_query["metadata.source_filename"] = source_filter
+            filter_query["source_filename"] = source_filter
         
-        # Obtener todos los documentos (o los filtrados)
+        # Obtener todos los documentos
         all_docs = list(collection.find(filter_query))
         print(f"📄 Documentos a evaluar: {len(all_docs)}")
         
@@ -270,21 +262,26 @@ def search_similar_documents(
         results_with_scores = []
         
         for doc in all_docs:
-            # El embedding puede estar en diferentes campos según cómo se guardó
-            doc_embedding = doc.get("embedding") or doc.get("vector")
+            # ✅ El embedding está en el campo 'embedding'
+            doc_embedding = doc.get("embedding")
             
             if doc_embedding is None:
                 print(f"⚠️ Documento sin embedding: {doc.get('_id')}")
                 continue
             
-            # Calcular similitud
             try:
                 similarity = cosine_similarity(query_embedding, doc_embedding)
                 
                 if similarity >= min_score:
                     results_with_scores.append({
-                        "content": doc.get("text", doc.get("page_content", ""))[:1000],
-                        "metadata": doc.get("metadata", {}),
+                        # ✅ CORRECCIÓN: El contenido está en 'text'
+                        "content": doc.get("text", "")[:1000],
+                        # ✅ CORRECCIÓN: Construir metadata desde campos raíz
+                        "metadata": {
+                            "source": doc.get("source", ""),
+                            "source_filename": doc.get("source_filename", ""),
+                            # Agregar otros campos que necesites
+                        },
                         "score": float(similarity)
                     })
             except Exception as e:
@@ -295,9 +292,8 @@ def search_similar_documents(
         results_with_scores.sort(key=lambda x: x["score"], reverse=True)
         top_results = results_with_scores[:k]
         
-        print(f"✅ Encontrados {len(top_results)} documentos similares (de {len(results_with_scores)} sobre umbral)")
+        print(f"✅ Encontrados {len(top_results)} documentos similares")
         
-        # Formatear scores
         for result in top_results:
             result["score"] = round(result["score"], 4)
         
@@ -307,41 +303,7 @@ def search_similar_documents(
         print(f"❌ Error en búsqueda vectorial local: {e}")
         import traceback
         traceback.print_exc()
-        
-        # Fallback: Intentar con LangChain (si está disponible)
-        try:
-            print("🔄 Intentando fallback con LangChain...")
-            
-            if hasattr(VECTOR_STORE, 'similarity_search_with_score'):
-                docs = VECTOR_STORE.similarity_search_with_score(query_text, k=k*2)
-            else:
-                # Si no tiene score, usar similarity_search normal
-                docs_no_score = VECTOR_STORE.similarity_search(query_text, k=k)
-                docs = [(doc, 1.0) for doc in docs_no_score]
-            
-            formatted_results = []
-            for doc, score in docs:
-                # Filtrar por source si se especificó
-                if source_filter and doc.metadata.get("source_filename") != source_filter:
-                    continue
-                
-                if score >= min_score:
-                    formatted_results.append({
-                        "content": doc.page_content[:1000],
-                        "metadata": doc.metadata,
-                        "score": round(float(score), 4)
-                    })
-            
-            # Limitar a k resultados
-            formatted_results = formatted_results[:k]
-            print(f"✅ Fallback exitoso: {len(formatted_results)} resultados")
-            
-            return formatted_results
-            
-        except Exception as fallback_error:
-            print(f"❌ Error en fallback de LangChain: {fallback_error}")
-            raise
-
+        return []
 
 def search_by_metadata(
     filters: Dict[str, Any],
