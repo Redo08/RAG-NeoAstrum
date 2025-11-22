@@ -236,5 +236,78 @@ def get_visited_nodes():
         return jsonify({"error": str(e)}), 500
 # ------------------------------------
 
+# Añade este endpoint a tu app.py
+@app.route("/search/vector", methods=["POST"])
+def vector_search() -> Any:
+    """
+    Realiza una búsqueda vectorial en documentos indexados (PDF y TXT).
+    Compatible con MongoDB local usando similitud de coseno.
+    
+    Body: {
+        "query": "texto de búsqueda",
+        "k": 5,  # opcional, número de resultados (default: 5)
+        "source_filter": "nombre_archivo.pdf",  # opcional, filtrar por archivo específico
+        "min_score": 0.7  # opcional, score mínimo de similitud (default: 0.0)
+    }
+    
+    Response: {
+        "results": [
+            {
+                "content": "fragmento del documento",
+                "metadata": {...},
+                "score": 0.95
+            }
+        ],
+        "total_results": 5,
+        "query": "texto buscado"
+    }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        query_text = data.get("query")
+        k = data.get("k", 5)
+        source_filter = data.get("source_filter")
+        min_score = data.get("min_score", 0.0)
+        
+        # Validaciones
+        if not query_text or not query_text.strip():
+            return jsonify({"error": "El campo 'query' es requerido"}), 400
+        
+        if not isinstance(k, int) or k < 1 or k > 50:
+            return jsonify({"error": "El campo 'k' debe ser un entero entre 1 y 50"}), 400
+        
+        if not isinstance(min_score, (int, float)) or min_score < 0 or min_score > 1:
+            return jsonify({"error": "El campo 'min_score' debe estar entre 0 y 1"}), 400
+        
+        print(f"🔍 Búsqueda vectorial: '{query_text}' (k={k}, min_score={min_score})")
+        
+        # Realizar búsqueda vectorial usando RAG service
+        from rag_service import search_similar_documents
+        
+        results = search_similar_documents(
+            query_text=query_text,
+            k=k,
+            source_filter=source_filter,
+            min_score=min_score
+        )
+        
+        return jsonify({
+            "results": results,
+            "total_results": len(results),
+            "query": query_text,
+            "filters": {
+                "source": source_filter,
+                "min_score": min_score
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ ERROR en /search/vector: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

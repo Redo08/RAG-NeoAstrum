@@ -192,3 +192,251 @@ def answer_question(question: str) -> Dict[str, Any]:
         "answer": response,
         "sources": serialized_sources,
     }
+
+
+# ============================================
+# AÑADE ESTO A TU rag_service.py
+# ============================================
+
+import numpy as np
+from typing import List, Dict, Any
+
+def cosine_similarity(vec1, vec2):
+    """Calcula similitud de coseno entre dos vectores."""
+    vec1 = np.array(vec1)
+    vec2 = np.array(vec2)
+    return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+
+
+def search_similar_documents(
+    query_text: str,
+    k: int = 5,
+    source_filter: str = None,
+    min_score: float = 0.0
+) -> List[Dict[str, Any]]:
+    """
+    Busca documentos similares usando similitud de coseno.
+    Compatible con MongoDB local (sin necesidad de Atlas).
+    
+    Args:
+        query_text: Texto de consulta para la búsqueda
+        k: Número de resultados a retornar
+        source_filter: Filtrar por nombre de archivo específico (opcional)
+        min_score: Score mínimo de similitud (opcional)
+        
+    Returns:
+        Lista de documentos con sus scores de similitud
+    """
+    if not VECTOR_STORE:
+        raise RuntimeError("RAG pipeline no inicializado.")
+    
+    try:
+        print(f"🔍 Iniciando búsqueda vectorial local para: '{query_text}'")
+        
+        # Conexión directa a MongoDB
+        client = MongoClient(MONGODB_URI)
+        db = client[DB_NAME]
+        collection = db[MONGODB_COLLECTION]
+        
+        print("----------------------------")
+        print(f"🌐 Conectado a MongoDB: {MONGODB_URI}, DB: {DB_NAME}, Colección: {MONGODB_COLLECTION}")
+        # Verificar si hay documentos
+        total_docs = collection.count_documents()
+        print(f"📊 Total de documentos en la colección: {total_docs}")
+        
+        if total_docs == 0:
+            print("⚠️ No hay documentos indexados")
+            return []
+        
+        # Generar embedding del query
+        embeddings_model = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+        query_embedding = embeddings_model.embed_query(query_text)
+        print(f"✅ Embedding generado (dimensiones: {len(query_embedding)})")
+        
+        # Construir filtro de búsqueda
+        filter_query = {}
+        if source_filter:
+            filter_query["metadata.source_filename"] = source_filter
+        
+        # Obtener todos los documentos (o los filtrados)
+        all_docs = list(collection.find(filter_query))
+        print(f"📄 Documentos a evaluar: {len(all_docs)}")
+        
+        if not all_docs:
+            print("⚠️ No se encontraron documentos que coincidan con el filtro")
+            return []
+        
+        # Calcular similitud para cada documento
+        results_with_scores = []
+        
+        for doc in all_docs:
+            # El embedding puede estar en diferentes campos según cómo se guardó
+            doc_embedding = doc.get("embedding") or doc.get("vector")
+            
+            if doc_embedding is None:
+                print(f"⚠️ Documento sin embedding: {doc.get('_id')}")
+                continue
+            
+            # Calcular similitud
+            try:
+                similarity = cosine_similarity(query_embedding, doc_embedding)
+                
+                if similarity >= min_score:
+                    results_with_scores.append({
+                        "content": doc.get("text", doc.get("page_content", ""))[:1000],
+                        "metadata": doc.get("metadata", {}),
+                        "score": float(similarity)
+                    })
+            except Exception as e:
+                print(f"⚠️ Error calculando similitud para doc {doc.get('_id')}: {e}")
+                continue
+        
+        # Ordenar por score descendente y limitar a k resultados
+        results_with_scores.sort(key=lambda x: x["score"], reverse=True)
+        top_results = results_with_scores[:k]
+        
+        print(f"✅ Encontrados {len(top_results)} documentos similares (de {len(results_with_scores)} sobre umbral)")
+        
+        # Formatear scores
+        for result in top_results:
+            result["score"] = round(result["score"], 4)
+        
+        return top_results
+        
+    except Exception as e:
+        print(f"❌ Error en búsqueda vectorial local: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Fallback: Intentar con LangChain (si está disponible)
+        try:
+            print("🔄 Intentando fallback con LangChain...")
+            
+            if hasattr(VECTOR_STORE, 'similarity_search_with_score'):
+                docs = VECTOR_STORE.similarity_search_with_score(query_text, k=k*2)
+            else:
+                # Si no tiene score, usar similarity_search normal
+                docs_no_score = VECTOR_STORE.similarity_search(query_text, k=k)
+                docs = [(doc, 1.0) for doc in docs_no_score]
+            
+            formatted_results = []
+            for doc, score in docs:
+                # Filtrar por source si se especificó
+                if source_filter and doc.metadata.get("source_filename") != source_filter:
+                    continue
+                
+                if score >= min_score:
+                    formatted_results.append({
+                        "content": doc.page_content[:1000],
+                        "metadata": doc.metadata,
+                        "score": round(float(score), 4)
+                    })
+            
+            # Limitar a k resultados
+            formatted_results = formatted_results[:k]
+            print(f"✅ Fallback exitoso: {len(formatted_results)} resultados")
+            
+            return formatted_results
+            
+        except Exception as fallback_error:
+            print(f"❌ Error en fallback de LangChain: {fallback_error}")
+            raise
+
+
+def search_by_metadata(
+    filters: Dict[str, Any],
+    k: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Búsqueda simple por metadatos (sin vectores).
+    Útil para filtrar por categoría, fuente, etc.
+    
+    Args:
+        filters: Diccionario de filtros (ej: {"metadata.source_filename": "doc.pdf"})
+        k: Número máximo de resultados
+        
+    Returns:
+        Lista de documentos que coinciden con los filtros
+    """
+    try:
+        client = MongoClient(MONGODB_URI)
+        db = client[DB_NAME]
+        collection = db[MONGODB_COLLECTION]
+        
+        # Buscar documentos
+        docs = list(collection.find(filters).limit(k))
+        
+        # Formatear resultados
+        results = []
+        for doc in docs:
+            results.append({
+                "content": doc.get("text", doc.get("page_content", ""))[:1000],
+                "metadata": doc.get("metadata", {}),
+                "score": None  # No hay score en búsqueda por metadatos
+            })
+        
+        print(f"✅ Encontrados {len(results)} documentos por metadatos")
+        return results
+        
+    except Exception as e:
+        print(f"❌ Error en búsqueda por metadatos: {e}")
+        return []
+
+
+def get_all_sources() -> List[str]:
+    """
+    Retorna lista de todos los archivos fuente indexados.
+    Útil para mostrar opciones de filtrado.
+    
+    Returns:
+        Lista de nombres de archivos únicos
+    """
+    try:
+        client = MongoClient(MONGODB_URI)
+        db = client[DB_NAME]
+        collection = db[MONGODB_COLLECTION]
+        
+        # Obtener valores únicos de source_filename
+        sources = collection.distinct("metadata.source_filename")
+        
+        print(f"📚 Fuentes disponibles: {len(sources)}")
+        return sources
+        
+    except Exception as e:
+        print(f"❌ Error obteniendo fuentes: {e}")
+        return []
+
+
+def debug_collection_structure():
+    """
+    Función de debug para inspeccionar la estructura de la colección.
+    Útil para verificar cómo están guardados los embeddings.
+    """
+    try:
+        client = MongoClient(MONGODB_URI)
+        db = client[DB_NAME]
+        collection = db[MONGODB_COLLECTION]
+        
+        # Obtener un documento de ejemplo
+        sample_doc = collection.find_one()
+        
+        if sample_doc:
+            print("\n=== 🔍 ESTRUCTURA DE DOCUMENTO ===")
+            print(f"Campos disponibles: {list(sample_doc.keys())}")
+            
+            if "embedding" in sample_doc:
+                print(f"✅ Campo 'embedding' encontrado (dim: {len(sample_doc['embedding'])})")
+            elif "vector" in sample_doc:
+                print(f"✅ Campo 'vector' encontrado (dim: {len(sample_doc['vector'])})")
+            else:
+                print("⚠️ No se encontró campo de embedding")
+            
+            if "metadata" in sample_doc:
+                print(f"Metadatos: {sample_doc['metadata']}")
+            
+            print("=================================\n")
+        else:
+            print("⚠️ La colección está vacía")
+            
+    except Exception as e:
+        print(f"❌ Error en debug: {e}")
