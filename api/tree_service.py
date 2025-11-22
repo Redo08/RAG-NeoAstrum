@@ -8,10 +8,13 @@ from datetime import datetime
 from pymongo import MongoClient
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
+import requests # <--- ¡NUEVO!
+from bson.objectid import ObjectId # <--- ¡NUEVO! Para usar ObjectId más fácil
 
 # Configuración
+
 if not os.environ.get("GOOGLE_API_KEY"):
-    os.environ["GOOGLE_API_KEY"] = "AIzaSyDQxZCOVDtlt0srL1xyLg4ToFficIlJnhU"
+    os.environ["GOOGLE_API_KEY"] = "AIzaSyCvYqtwqUNuvzqGhEdhC4f7DRJ3qBccncQ"
 
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = "chatbot_financiero"
@@ -30,6 +33,9 @@ LLM = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
 # Árbol de productos financieros
 with open("api/config.json", "r", encoding="utf-8") as f:
     FINANCIAL_TREE = json.load(f)
+    
+# Configuración microservicio Notificaciones
+NOTIFICATIONS_SERVICE_URL = os.environ.get("NOTIFICATIONS_SERVICE_URL", "https://ms-notifications.onrender.com/send-email") # <--- ¡NUEVO!
 
 def get_node_by_id(node_id: str, tree: Dict = None) -> Optional[Dict]:
     """Encuentra un nodo en el árbol por su ID"""
@@ -365,15 +371,93 @@ def process_message(session_id: Optional[str], user_message: str, user_id: str =
     # Obtener hijos
     children = get_children(current_node)
     
-    # Si no hay hijos, es un nodo hoja
+    # --- Lógica de NODO HOJA (Captura de Leads) ---
     if not children:
-        return {
-            "session_id": session_id,
-            "response": f"Has llegado al producto final: {current_node['nombre']}. {current_node['descripcion']}. ¿En qué más puedo ayudarte?",
-            "current_node": current_node,
-            "is_leaf": True
-        }
-    
+        # 1. Si el paso de captura NO está iniciado, preguntar si quiere más info
+        if session.get("data_capture_step") is None:
+            set_data_capture_step(session_id, 1)
+            return {
+                "session_id": session_id,
+                "response": f"¡Has encontrado el producto! Te interesa: {current_node['nombre']}. {current_node['descripcion']}. ¿Quieres que un asesor se ponga en contacto contigo para darte más detalles?",
+                "current_node": current_node,
+                "is_leaf": True,
+                "options": [
+                    {"id": "confirm_data", "nombre": "Sí, quiero contacto"},
+                    {"id": "cancel_data", "nombre": "No, gracias"}
+                ]
+            }
+        
+        # 2. Si el usuario ya está en el paso 1 (preguntado)
+        elif session.get("data_capture_step") == 1:
+            message_lower = user_message.lower().strip()
+            
+            # --- Manejo de la Confirmación/Rechazo ---
+            if any(keyword in message_lower for keyword in ["sí", "si", "quiero contacto", "aceptar", "dale", "ok"]):
+                # El usuario acepta, pedir los datos formalmente
+                set_data_capture_step(session_id, 1) # Lo mantenemos en el paso 1 esperando los datos
+                return {
+                    "session_id": session_id,
+                    "response": "¡Excelente! Por favor, envíame tu **Nombre**, **Teléfono** y **Correo Electrónico** separados por comas. Ejemplo: *Juan Pérez, 3001234567, juan.perez@email.com*",
+                    "current_node": current_node
+                }
+            
+            elif any(keyword in message_lower for keyword in ["no", "no gracias", "cancelar", "seguir aquí"]):
+                # El usuario rechaza, limpiar el estado y seguir normal
+                sessions_collection.update_one(
+                    {"_id": ObjectId(session_id)},
+                    {"$unset": {"data_capture_step": ""}} # Limpiar el paso
+                )
+                return {
+                    "session_id": session_id,
+                    "response": "¿De acuerdo. ¿Necesitas ayuda con algún otro producto o pregunta general?",
+                    "current_node": current_node
+                }
+                
+            # --- Manejo de la Recepción de Datos (Si no es una confirmación ni un rechazo) ---
+            # Asumimos que si no es un sí/no, el usuario está enviando los datos
+            
+            # Intentar parsear el mensaje del usuario para obtener Name, Phone, Email
+            parts = [p.strip() for p in user_message.split(',') if p.strip()]
+            
+            if len(parts) >= 3:
+                name, phone, email = parts[0], parts[1], parts[2]
+                
+                # Intentar enviar la notificación
+                lead_data = {"name": name, "phone": phone, "email": email}
+                success = send_lead_notification(session_id, lead_data, current_node)
+                
+                # Marcar sesión como completada (o limpiar el step)
+                set_data_capture_step(session_id, 2)
+                
+                if success:
+                    return {
+                        "session_id": session_id,
+                        "response": f"¡Gracias, {name}! Tus datos y el resumen del producto ({current_node['nombre']}) han sido enviados. Un asesor te contactará pronto. ¿En qué más puedo ayudarte?",
+                        "current_node": current_node,
+                        "is_complete": True
+                    }
+                else:
+                    return {
+                        "session_id": session_id,
+                        "response": "Hubo un error al enviar tus datos. Por favor, inténtalo más tarde. Disculpa las molestias.",
+                        "current_node": current_node
+                    }
+            else:
+                # El usuario aceptó pero no envió los datos correctamente
+                return {
+                    "session_id": session_id,
+                    "response": "No pude extraer los 3 datos requeridos (Nombre, Teléfono, Correo). Por favor, envíalos separados por comas. Ejemplo: *Juan Pérez, 3001234567, juan.perez@email.com*",
+                    "current_node": current_node
+                }
+        
+        # 3. Si el usuario ya completó o no quiere enviar más
+        else:
+            return {
+                "session_id": session_id,
+                "response": "¿Necesitas ayuda con algún otro producto financiero? Si quieres empezar de nuevo, solo di 'reiniciar'.",
+                "current_node": current_node
+            }
+            
     # Detectar coincidencia
     match_result = detect_child_match(user_message, children)
     
@@ -458,3 +542,116 @@ def start_conversation(user_id: str = "anonymous") -> Dict[str, Any]:
         "current_node": root_node,
         "options": [{"id": c["id"], "nombre": c["nombre"]} for c in children]
     }
+    
+def set_data_capture_step(session_id: str, step: int):
+    """Marca la sesión para la captura de datos (1: preguntado, 2: datos enviados)"""
+    from bson import ObjectId
+    sessions_collection.update_one(
+        {"_id": ObjectId(session_id)},
+        {
+            "$set": {
+                "data_capture_step": step,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+def get_session_summary(session_id: str) -> str:
+    """Consulta MongoDB, crea una lista del camino tomado y usa el LLM para resumir."""
+    
+    # 1. Fase de Recolección de Datos (Igual que antes)
+    try:
+        session_obj_id = ObjectId(session_id)
+    except:
+        return "Resumen de sesión no disponible."
+
+    pipeline = [
+        {"$match": {"session_id": session_id}},
+        {"$sort": {"created_at": 1}}
+    ]
+    responses = list(responses_collection.aggregate(pipeline))
+    
+    if not responses:
+        return "El usuario no navegó por el árbol."
+
+    # Crear una lista simple del camino para el LLM
+    path_list = []
+    for i, resp in enumerate(responses):
+        node_id = resp["selected_child_id"]
+        node = get_node_by_id(node_id)
+        if node:
+            path_list.append(f"Paso {i+1}: {node['nombre']} ({node['descripcion']}).")
+
+    raw_path_text = "\n".join(path_list)
+
+    # 2. Fase de Generación de Resumen con LLM (¡NUEVO!)
+    
+    prompt = f"""
+    Eres un asistente de ventas financiero. Recibiste el siguiente camino de navegación de un cliente en nuestro chatbot:
+
+    {raw_path_text}
+
+    Tu tarea es generar un resumen narrativo breve (máximo 3-4 líneas) que sirva para que un asesor comercial entienda:
+    1. El principal producto de interés del cliente.
+    2. El camino general que tomó para llegar a esa decisión.
+
+    Ejemplo de respuesta: "El cliente comenzó explorando Préstamos de Consumo y terminó especificando su interés en un Crédito de Vehículo. Está buscando financiación para la compra de un carro."
+    
+    Responde ÚNICAMENTE con el resumen narrativo, sin títulos ni explicaciones adicionales.
+    """
+    
+    messages = [
+        SystemMessage(content=prompt),
+        HumanMessage(content="Genera el resumen")
+    ]
+    
+    try:
+        # Usamos el LLM que ya tienes definido (Gemini-2.5-flash)
+        result = LLM.invoke(messages)
+        return result.content.strip()
+    except Exception as e:
+        print(f"Error al generar resumen con LLM: {e}")
+        # Retorna el listado simple si el LLM falla
+        return "Resumen (Fallo LLM):\n" + raw_path_text
+
+def send_lead_notification(session_id: str, lead_data: Dict[str, str], product_node: Dict):
+    """Llama al microservicio de notificaciones con los datos del lead y el resumen."""
+    
+    summary = get_session_summary(session_id) # Esta función ahora usa el LLM
+    
+    # ... (rest of the function remains the same) ...
+    subject = f"NUEVO LEAD CHATBOT: {product_node['nombre']}"
+    
+    body = f"""
+    ¡Has capturado un nuevo Lead del chatbot financiero!
+
+    **Producto de Interés Final:** {product_node['nombre']}
+    **Descripción:** {product_node['descripcion']}
+
+    **--- Datos del Cliente (Lead) ---**
+    - **Nombre:** {lead_data['name']}
+    - **Teléfono:** {lead_data['phone']}
+    - **Correo Electrónico:** {lead_data['email']}
+    - **ID de Sesión:** {session_id}
+
+    **--- RESUMEN NARRATIVO DE NAVEGACIÓN (Generado por IA) ---**
+    {summary}
+    """
+    
+    # 3. Datos de la solicitud a ms-notifications
+    notification_data = {
+        # ¡IMPORTANTE! Reemplaza 'correo_interno_recepcion@ejemplo.com' por tu correo real de recepción de leads.
+        "to": "juan.reyes54587@ucaldas.edu.co", 
+        "subject": subject,
+        "body": body,
+        "is_html": False
+    }
+
+    try:
+        response = requests.post(NOTIFICATIONS_SERVICE_URL, json=notification_data, timeout=10)
+        response.raise_for_status() # Lanza error para códigos 4xx/5xx
+        print(f"Notificación de lead enviada con éxito. Status: {response.status_code}")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error al enviar la notificación de lead a ms-notifications: {e}")
+        return False

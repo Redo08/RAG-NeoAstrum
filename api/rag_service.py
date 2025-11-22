@@ -18,8 +18,8 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGener
 
 # Environment
 
-if not os.environ.get("GOOGLE_API_KEY"):
-    os.environ["GOOGLE_API_KEY"] = "AIzaSyDQxZCOVDtlt0srL1xyLg4ToFficIlJnhU"
+# if not os.environ.get("GOOGLE_API_KEY"):
+#     os.environ["GOOGLE_API_KEY"] = "AIzaSyDQxZCOVDtlt0srL1xyLg4ToFficIlJnhU"
 os.environ.setdefault("USER_AGENT", "EnigmaCodersRAG/0.1")
 
 PDF_PATH = Path("constitucion.pdf")
