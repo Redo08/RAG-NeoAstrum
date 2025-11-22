@@ -21,7 +21,7 @@ from werkzeug.datastructures import FileStorage
 # La conexión a la DB se debe tomar de tu módulo `.database` o de variables de entorno
 # Aquí asumimos que tienes una conexión de PyMongo disponible.
 # IMPORTANTE: Reemplaza con tus valores reales de conexión
-MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://localhost:27017/")
+MONGODB_URI = os.environ.get("MONGO_URI")
 DB_NAME = os.environ.get("DB_NAME","chatbot_financiero") # Nombre de tu base de datos
 MONGODB_COLLECTION = os.environ.get("MONGO_COLLECTIONS","document_vectors") # Colección donde se guardarán los vectores
 ATLAS_VECTOR_SEARCH_INDEX_NAME = os.environ.get("ATLAS_VECTOR_SEARCH_INDEX_NAME", "vector_index") # Nombre de tu índice en Atlas
