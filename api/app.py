@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from typing import Any, Dict
 import sys
 from pathlib import Path
-from database import Database  # <--- Importamos nuestra conexión
+from .database import Database  # <--- Importamos nuestra conexión
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
