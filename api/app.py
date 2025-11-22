@@ -5,6 +5,9 @@ from werkzeug.datastructures import FileStorage
 from dotenv import load_dotenv
 import os
 
+load_dotenv()  # cargar variables
+
+
 # Use relative imports within the package instead of modifying sys.path.
 try:
     # Normal package execution: python -m api.app
@@ -22,7 +25,6 @@ except ImportError:
     from services.tree_service import start_conversation, process_message, get_session  # type: ignore
     from services.rag_service import _process_and_index_file  # type: ignore
 
-load_dotenv()  # cargar variables
 
 
 
