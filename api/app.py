@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from typing import Any, Dict
 import sys
 from pathlib import Path
-from database import Database  # <--- Importamos nuestra conexión
+from .database import Database  # <--- Importamos nuestra conexión
 from werkzeug.datastructures import FileStorage
 
 # Para variables de entorno desde .env (opcional)
