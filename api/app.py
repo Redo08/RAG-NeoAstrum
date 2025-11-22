@@ -4,6 +4,13 @@ import sys
 from pathlib import Path
 from database import Database  # <--- Importamos nuestra conexión
 from werkzeug.datastructures import FileStorage
+
+# Para variables de entorno desde .env (opcional)
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # cargar variables
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
