@@ -1,25 +1,28 @@
 from flask import Flask, request, jsonify
 from typing import Any, Dict
-import sys
 from pathlib import Path
-from database import Database  # <--- Importamos nuestra conexión
 from werkzeug.datastructures import FileStorage
-
-# Para variables de entorno desde .env (opcional)
 from dotenv import load_dotenv
 import os
 
-load_dotenv()  # cargar variables
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+# Use relative imports within the package instead of modifying sys.path.
 try:
-    from api.tree_service import start_conversation, process_message, get_session
-    from api.rag_service import _process_and_index_file
-except ModuleNotFoundError:
-    from tree_service import start_conversation, process_message, get_session
-    from rag_service import _process_and_index_file
+    # Normal package execution: python -m api.app
+    from .database import Database
+    from .services.tree_service import start_conversation, process_message, get_session
+    from .services.rag_service import _process_and_index_file
+except ImportError:
+    # Fallback for direct script execution: python api/app.py
+    import sys as _sys
+    from pathlib import Path as _P
+    _root = str(_P(__file__).resolve().parent)
+    if _root not in _sys.path:
+        _sys.path.insert(0, _root)
+    from database import Database  # type: ignore
+    from services.tree_service import start_conversation, process_message, get_session  # type: ignore
+    from services.rag_service import _process_and_index_file  # type: ignore
+
+load_dotenv()  # cargar variables
 
 
 
@@ -289,7 +292,7 @@ def vector_search() -> Any:
         print(f"🔍 Búsqueda vectorial: '{query_text}' (k={k}, min_score={min_score})")
         
         # Realizar búsqueda vectorial usando RAG service
-        from rag_service import search_similar_documents
+        from api.services.rag_service import search_similar_documents
         
         results = search_similar_documents(
             query_text=query_text,

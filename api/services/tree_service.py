@@ -299,7 +299,14 @@ def process_message(session_id: str, message: str, user_id: str = "anonymous") -
             return {"error": "Sesión no encontrada"}
         
         # 3. **AQUÍ INTEGRAMOS RAG** - Buscar respuesta usando documentos
-        from rag_service import answer_question
+        # Import RAG answer function using package-relative path; supports both module and direct script executions
+        try:
+            from .rag_service import answer_question  # when imported as part of 'api.services'
+        except ImportError:
+            try:
+                from api.services.rag_service import answer_question  # explicit package path fallback
+            except ImportError:
+                from rag_service import answer_question  # last resort if running in a flat script context
         
         print(f"🔍 Buscando respuesta RAG para: '{message}'")
         rag_result = answer_question(
