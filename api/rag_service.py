@@ -210,7 +210,7 @@ def cosine_similarity(vec1, vec2):
 
 def search_similar_documents(
     query_text: str,
-    k: int = 5,
+    k: int = 3,
     source_filter: str = None,
     min_score: float = 0.0
 ) -> List[Dict[str, Any]]:
