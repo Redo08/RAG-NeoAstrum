@@ -16,7 +16,7 @@ from pymongo import MongoClient
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from werkzeug.datastructures import FileStorage
 
-
+#comm
 # --- CONFIGURACIÓN ---
 # La conexión a la DB se debe tomar de tu módulo `.database` o de variables de entorno
 # Aquí asumimos que tienes una conexión de PyMongo disponible.
