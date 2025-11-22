@@ -26,8 +26,7 @@ DB_NAME = os.environ.get("DB_NAME","chatbot_financiero") # Nombre de tu base de 
 MONGODB_COLLECTION = os.environ.get("MONGO_COLLECTIONS","document_vectors") # Colección donde se guardarán los vectores
 ATLAS_VECTOR_SEARCH_INDEX_NAME = os.environ.get("ATLAS_VECTOR_SEARCH_INDEX_NAME", "vector_index") # Nombre de tu índice en Atlas
 
-if not os.environ.get("GOOGLE_API_KEY"):
-    os.environ["GOOGLE_API_KEY"] = "AIzaSyDYG9sBJ8btds4TaFhd1C0ZkFwA2Xc8224"
+
 
 # Environment
 os.environ.setdefault("USER_AGENT", "EnigmaCodersRAG/0.1")
@@ -37,6 +36,12 @@ VECTOR_STORE = None
 LLM = None
 SYSTEM_PROMPT = ""
 
+
+def dot_product_similarity(vec1, vec2):
+    """Similitud por producto punto (no normalizado)."""
+    vec1 = np.array(vec1)
+    vec2 = np.array(vec2)
+    return float(np.dot(vec1, vec2))
 
 def _build_pipeline():
     """Inicializa embeddings, conexión a MongoDB, y el LLM."""
@@ -64,7 +69,7 @@ def _build_pipeline():
         embedding=embeddings_,
         collection=collection,
         index_name=ATLAS_VECTOR_SEARCH_INDEX_NAME,
-        relevance_score_fn="cosine", # Función de similitud
+        relevance_score_fn="dotproduct", # Función de similitud
     )
 
     # 4. LLM
@@ -252,7 +257,7 @@ def search_similar_documents(
         raise RuntimeError("RAG pipeline no inicializado.")
     
     try:
-        print(f"🔍 Iniciando búsqueda vectorial local para: '{query_text}'")
+        print(f" Iniciando búsqueda vectorial local para: '{query_text}'")
         
         # Conexión directa a MongoDB
         client = MongoClient(MONGODB_URI)
@@ -260,53 +265,53 @@ def search_similar_documents(
         collection = db[MONGODB_COLLECTION]
         
         print("----------------------------")
-        print(f"🌐 Conectado a MongoDB: {DB_NAME}.{MONGODB_COLLECTION}")
+        print(f" Conectado a MongoDB: {DB_NAME}.{MONGODB_COLLECTION}")
         
-        # ✅ CORRECCIÓN: Agregar filtro vacío
+        #  CORRECCIÓN: Agregar filtro vacío
         total_docs = collection.count_documents({})
-        print(f"📊 Total de documentos en la colección: {total_docs}")
+        print(f" Total de documentos en la colección: {total_docs}")
         
         if total_docs == 0:
-            print("⚠️ No hay documentos indexados")
+            print(" No hay documentos indexados")
             return []
         
         # Generar embedding del query
         embeddings_model = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
         query_embedding = embeddings_model.embed_query(query_text)
-        print(f"✅ Embedding generado (dimensiones: {len(query_embedding)})")
+        print(f" Embedding generado (dimensiones: {len(query_embedding)})")
         
-        # ✅ CORRECCIÓN: source_filename está en raíz, no en metadata
+        #  CORRECCIÓN: source_filename está en raíz, no en metadata
         filter_query = {}
         if source_filter:
             filter_query["source_filename"] = source_filter
         
         # Obtener todos los documentos
         all_docs = list(collection.find(filter_query))
-        print(f"📄 Documentos a evaluar: {len(all_docs)}")
+        print(f" Documentos a evaluar: {len(all_docs)}")
         
         if not all_docs:
-            print("⚠️ No se encontraron documentos que coincidan con el filtro")
+            print(" No se encontraron documentos que coincidan con el filtro")
             return []
         
         # Calcular similitud para cada documento
         results_with_scores = []
         
         for doc in all_docs:
-            # ✅ El embedding está en el campo 'embedding'
+            #  El embedding está en el campo 'embedding'
             doc_embedding = doc.get("embedding")
             
             if doc_embedding is None:
-                print(f"⚠️ Documento sin embedding: {doc.get('_id')}")
+                print(f" Documento sin embedding: {doc.get('_id')}")
                 continue
             
             try:
-                similarity = cosine_similarity(query_embedding, doc_embedding)
+                similarity = dot_product_similarity(query_embedding, doc_embedding)
                 
                 if similarity >= min_score:
                     results_with_scores.append({
-                        # ✅ CORRECCIÓN: El contenido está en 'text'
+                        #  CORRECCIÓN: El contenido está en 'text'
                         "content": doc.get("text", "")[:1000],
-                        # ✅ CORRECCIÓN: Construir metadata desde campos raíz
+                        #  CORRECCIÓN: Construir metadata desde campos raíz
                         "metadata": {
                             "source": doc.get("source", ""),
                             "source_filename": doc.get("source_filename", ""),
@@ -315,14 +320,14 @@ def search_similar_documents(
                         "score": float(similarity)
                     })
             except Exception as e:
-                print(f"⚠️ Error calculando similitud para doc {doc.get('_id')}: {e}")
+                print(f" Error calculando similitud para doc {doc.get('_id')}: {e}")
                 continue
         
         # Ordenar por score descendente y limitar a k resultados
         results_with_scores.sort(key=lambda x: x["score"], reverse=True)
         top_results = results_with_scores[:k]
         
-        print(f"✅ Encontrados {len(top_results)} documentos similares")
+        print(f" Encontrados {len(top_results)} documentos similares")
         
         for result in top_results:
             result["score"] = round(result["score"], 4)
@@ -330,11 +335,10 @@ def search_similar_documents(
         return top_results
         
     except Exception as e:
-        print(f"❌ Error en búsqueda vectorial local: {e}")
+        print(f" Error en búsqueda vectorial local: {e}")
         import traceback
         traceback.print_exc()
         return []
-
 def search_by_metadata(
     filters: Dict[str, Any],
     k: int = 10
