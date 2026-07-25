@@ -25,7 +25,7 @@ sessions_collection = db["sessions"]
 responses_collection = db["responses"]
 
 # LLM
-LLM = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.3)
+LLM = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
 
 # Árbol de productos financieros
 with open("api/config.json", "r", encoding="utf-8") as f:

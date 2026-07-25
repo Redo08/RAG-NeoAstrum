@@ -80,7 +80,7 @@ def _build_pipeline():
     )
 
     # 4. LLM
-    LLM = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
+    LLM = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
     # 5. System Prompt
     SYSTEM_PROMPT = (
