@@ -80,7 +80,7 @@ def _build_pipeline():
     )
 
     # 4. LLM
-    LLM = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    LLM = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
 
     # 5. System Prompt
     SYSTEM_PROMPT = (
@@ -200,10 +200,15 @@ def answer_question(question: str, k: int = 3, min_score: float = 0.5) -> Dict[s
         ]
 
         # 4. Llamar al LLM
-        print("🤖 Invocando LLM...")
-        result = LLM.invoke(messages)
-        response = getattr(result, "content", str(result))
-        print(f"✅ Respuesta generada ({len(response)} caracteres)")
+        try: 
+            print("🤖 Invocando LLM...")
+            result = LLM.invoke(messages)
+            response = getattr(result, "content", str(result))
+            print(f"✅ Respuesta generada ({len(response)} caracteres)")
+        except Exception as e:
+            if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
+                return {"error": "Estamos recibiendo muchas preguntas en este momento. Intenta de nuevo en un minuto."}
+            raise
 
         # 5. Serializar fuentes para el frontend
         serialized_sources = [
