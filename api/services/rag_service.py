@@ -2,6 +2,7 @@
 Service layer for the RAG pipeline.
 """
 import os
+import numpy as np
 from pathlib import Path
 from typing import Dict, Any, List, Union
 from io import BytesIO
@@ -10,11 +11,14 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 # Importamos la nueva integración para MongoDB
 from langchain_mongodb import MongoDBAtlasVectorSearch
 from pymongo import MongoClient
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from werkzeug.datastructures import FileStorage
+import tempfile
+import uuid
 
 #comm
 # --- CONFIGURACIÓN ---
@@ -26,6 +30,9 @@ DB_NAME = os.environ.get("DB_NAME","chatbot_financiero") # Nombre de tu base de 
 MONGODB_COLLECTION = os.environ.get("MONGO_COLLECTIONS","document_vectors") # Colección donde se guardarán los vectores
 ATLAS_VECTOR_SEARCH_INDEX_NAME = os.environ.get("ATLAS_VECTOR_SEARCH_INDEX_NAME", "vector_index") # Nombre de tu índice en Atlas
 
+# Model actualizado — text-embedding-004 y embedding-001 ya fueron dados de baja por Google
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "gemini-embedding-2")
+EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "768"))  # 768/1536/3072 vía MRL; 768 ahorra espacio en Mongo
 
 
 # Environment
@@ -47,11 +54,11 @@ def _build_pipeline():
     """Inicializa embeddings, conexión a MongoDB, y el LLM."""
     global VECTOR_STORE, LLM, SYSTEM_PROMPT
 
-    # 1. Embeddings con fallback
-    try:
-        embeddings_ = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-    except Exception:
-        embeddings_ = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings_ = GoogleGenerativeAIEmbeddings(
+        model=EMBEDDING_MODEL,
+        output_dimensionality=EMBEDDING_DIM,
+    )
+
 
     # 2. Conexión a MongoDB
     try:
@@ -73,7 +80,7 @@ def _build_pipeline():
     )
 
     # 4. LLM
-    LLM = ChatGoogleGenerativeAI(model="gemini-2.5-pro")
+    LLM = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
     # 5. System Prompt
     SYSTEM_PROMPT = (
@@ -85,40 +92,26 @@ def _build_pipeline():
     print("✅ Pipeline RAG inicializado con MongoDB Atlas Vector Search.")
 
 
-def _get_file_loader(file_data: BytesIO, filename: str) -> Union[PyPDFLoader, TextLoader, None]:
-    """Retorna el loader adecuado según la extensión del archivo."""
+def _get_file_loader(file_data: BytesIO, filename: str) -> tuple[Union[PyPDFLoader, TextLoader, None], Path]:
+    """Retorna el loader adecuado y la ruta del temporal creado."""
     extension = Path(filename).suffix.lower()
-    temp_path = Path(filename)
-    
-    # Escribir el archivo en un temporal si es necesario (ej: pypdf requiere un path)
-    # Sin embargo, para fines de demostración, LangChain a veces puede manejar bytes/archivos.
-    # El método más robusto en Flask es guardar temporalmente o usar lectores en memoria.
-    
-    # Estrategia: Escribir a un archivo temporal para que los loaders de LangChain puedan leerlo.
+
+    temp_dir = Path(tempfile.gettempdir())
+    temp_path = temp_dir / f"{uuid.uuid4().hex}_{filename}"
+
     file_data.seek(0)
-    
-    # Crear un archivo temporal con el contenido de BytesIO
-    # En un entorno de producción, usa 'tempfile' para mayor seguridad.
     with open(temp_path, "wb") as f:
         f.write(file_data.read())
-        
+
     if extension == ".pdf":
-        return PyPDFLoader(str(temp_path))
+        return PyPDFLoader(str(temp_path)), temp_path
     elif extension == ".txt":
-        return TextLoader(str(temp_path))
+        return TextLoader(str(temp_path)), temp_path
     else:
-        return None
+        temp_path.unlink(missing_ok=True)
+        return None, temp_path
 
 def _process_and_index_file(file: FileStorage) -> List[Document]:
-    """
-    Procesa un archivo subido, lo divide en fragmentos y lo indexa en el Vector Store de MongoDB.
-    
-    Args:
-        file: El objeto FileStorage de Flask.
-        
-    Returns:
-        Lista de documentos indexados.
-    """
     if not VECTOR_STORE:
         raise RuntimeError("RAG pipeline no inicializado.")
 
@@ -126,41 +119,36 @@ def _process_and_index_file(file: FileStorage) -> List[Document]:
     file_data = BytesIO(file.read())
 
     # 1. Obtener Loader
-    loader = _get_file_loader(file_data, filename)
+    loader, temp_path = _get_file_loader(file_data, filename)
 
     if not loader:
         raise ValueError(f"Tipo de archivo no soportado: {filename}")
 
-    # 2. Cargar Documentos
-    docs = loader.load()
+    try:
+        # 2. Cargar Documentos
+        docs = loader.load()
 
-    # 3. Dividir en Chunks
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500, 
-        chunk_overlap=50,
-        separators=[
-            "\n\n",  # Intenta dividir por salto de párrafo (espacio entre párrafos)
-            "\n",    # Luego, por salto de línea simple
-            ".",     # Luego, por punto final de frase
-            " ",     # Finalmente, por espacio
-            ""       # Fallback por caracter
-        ]
-    )
-    splits = splitter.split_documents(docs)
+        # 3. Dividir en Chunks
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50,
+            separators=["\n\n", "\n", ".", " ", ""]
+        )
+        splits = splitter.split_documents(docs)
 
-    # 4. Asignar metadatos útiles
-    for split in splits:
-        split.metadata["source_filename"] = filename # Agrega el nombre original
-        # Eliminar el archivo temporal si se creó, para evitar contaminación
-        if Path(filename).exists():
-            Path(filename).unlink() 
-            
-    # 5. Indexar en MongoDB Atlas
-    if splits:
-        VECTOR_STORE.add_documents(splits)
-        print(f"✅ Indexados {len(splits)} chunks de '{filename}' en MongoDB.")
-    
-    return splits
+        # 4. Asignar metadatos útiles
+        for split in splits:
+            split.metadata["source_filename"] = filename
+
+        # 5. Indexar en MongoDB Atlas
+        if splits:
+            VECTOR_STORE.add_documents(splits)
+            print(f"✅ Indexados {len(splits)} chunks de '{filename}' en MongoDB.")
+
+        return splits
+    finally:
+        # Limpieza garantizada, incluso si algo falla arriba
+        temp_path.unlink(missing_ok=True)
 
 
 # Build once
@@ -243,9 +231,6 @@ def answer_question(question: str, k: int = 3, min_score: float = 0.5) -> Dict[s
 # AÑADE ESTO A TU rag_service.py
 # ============================================
 
-import numpy as np
-from typing import List, Dict, Any
-
 def cosine_similarity(vec1, vec2):
     """Calcula similitud de coseno entre dos vectores."""
     vec1 = np.array(vec1)
@@ -259,96 +244,36 @@ def search_similar_documents(
     source_filter: str = None,
     min_score: float = 0.0
 ) -> List[Dict[str, Any]]:
-    """
-    Busca documentos similares usando similitud de coseno.
-    Compatible con MongoDB local (sin necesidad de Atlas).
-    """
+    """Búsqueda vectorial nativa usando el índice de Atlas Vector Search."""
     if not VECTOR_STORE:
         raise RuntimeError("RAG pipeline no inicializado.")
-    
+
+    pre_filter = {"source_filename": source_filter} if source_filter else None
+
     try:
-        print(f" Iniciando búsqueda vectorial local para: '{query_text}'")
-        
-        # Conexión directa a MongoDB
-        client = MongoClient(MONGODB_URI)
-        db = client[DB_NAME]
-        collection = db[MONGODB_COLLECTION]
-        
-        print("----------------------------")
-        print(f" Conectado a MongoDB: {DB_NAME}.{MONGODB_COLLECTION}")
-        
-        #  CORRECCIÓN: Agregar filtro vacío
-        total_docs = collection.count_documents({})
-        print(f" Total de documentos en la colección: {total_docs}")
-        
-        if total_docs == 0:
-            print(" No hay documentos indexados")
-            return []
-        
-        # Generar embedding del query
-        embeddings_model = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-        query_embedding = embeddings_model.embed_query(query_text)
-        print(f" Embedding generado (dimensiones: {len(query_embedding)})")
-        
-        #  CORRECCIÓN: source_filename está en raíz, no en metadata
-        filter_query = {}
-        if source_filter:
-            filter_query["source_filename"] = source_filter
-        
-        # Obtener todos los documentos
-        all_docs = list(collection.find(filter_query))
-        print(f" Documentos a evaluar: {len(all_docs)}")
-        
-        if not all_docs:
-            print(" No se encontraron documentos que coincidan con el filtro")
-            return []
-        
-        # Calcular similitud para cada documento
-        results_with_scores = []
-        
-        for doc in all_docs:
-            #  El embedding está en el campo 'embedding'
-            doc_embedding = doc.get("embedding")
-            
-            if doc_embedding is None:
-                print(f" Documento sin embedding: {doc.get('_id')}")
-                continue
-            
-            try:
-                similarity = dot_product_similarity(query_embedding, doc_embedding)
-                
-                if similarity >= min_score:
-                    results_with_scores.append({
-                        #  CORRECCIÓN: El contenido está en 'text'
-                        "content": doc.get("text", "")[:1000],
-                        #  CORRECCIÓN: Construir metadata desde campos raíz
-                        "metadata": {
-                            "source": doc.get("source", ""),
-                            "source_filename": doc.get("source_filename", ""),
-                            # Agregar otros campos que necesites
-                        },
-                        "score": float(similarity)
-                    })
-            except Exception as e:
-                print(f" Error calculando similitud para doc {doc.get('_id')}: {e}")
-                continue
-        
-        # Ordenar por score descendente y limitar a k resultados
-        results_with_scores.sort(key=lambda x: x["score"], reverse=True)
-        top_results = results_with_scores[:k]
-        
-        print(f" Encontrados {len(top_results)} documentos similares")
-        
-        for result in top_results:
-            result["score"] = round(result["score"], 4)
-        
-        return top_results
-        
+        results = VECTOR_STORE.similarity_search_with_score(
+            query_text,
+            k=k,
+            pre_filter=pre_filter,
+        )
     except Exception as e:
-        print(f" Error en búsqueda vectorial local: {e}")
+        print(f"❌ Error en búsqueda vectorial: {e}")
         import traceback
         traceback.print_exc()
         return []
+
+    output = []
+    for doc, score in results:
+        if score >= min_score:
+            output.append({
+                "content": doc.page_content[:1000],
+                "metadata": {
+                    "source": doc.metadata.get("source", ""),
+                    "source_filename": doc.metadata.get("source_filename", ""),
+                },
+                "score": round(float(score), 4),
+            })
+    return output
 def search_by_metadata(
     filters: Dict[str, Any],
     k: int = 10

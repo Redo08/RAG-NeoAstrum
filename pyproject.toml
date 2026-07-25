@@ -1,0 +1,17 @@
+[project]
+name = "enigmacoders"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "flask==3.0.0",
+    "flask-cors==4.0.0",
+    "google-generativeai==0.8.3",
+    "gunicorn==22.0.0",
+    "langchain>=0.3.14",
+    "langchain-community>=0.3.14",
+    "langchain-google-genai>=4.3.0",
+    "langchain-mongodb>=0.11.0",
+    "pymongo>=4.17.0",
+    "pypdf>=6.14.2",
+    "python-dotenv>=1.2.2",
+]

@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 import requests # <--- ¡NUEVO!
 from bson.objectid import ObjectId # <--- ¡NUEVO! Para usar ObjectId más fácil
 # 5. Guardar interacción en MongoDB
-from ..database import Database
+from database import Database
 
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = "chatbot_financiero"

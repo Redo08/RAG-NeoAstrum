@@ -14,6 +14,7 @@ try:
     from .database import Database
     from .services.tree_service import start_conversation, process_message, get_session
     from .services.rag_service import _process_and_index_file
+    from .services.rag_service import search_similar_documents
 except ImportError:
     # Fallback for direct script execution: python api/app.py
     import sys as _sys
@@ -24,6 +25,7 @@ except ImportError:
     from database import Database  # type: ignore
     from services.tree_service import start_conversation, process_message, get_session  # type: ignore
     from services.rag_service import _process_and_index_file  # type: ignore
+    from services.rag_service import search_similar_documents  # type: ignore
 
 
 
@@ -292,9 +294,6 @@ def vector_search() -> Any:
             return jsonify({"error": "El campo 'min_score' debe estar entre 0 y 1"}), 400
         
         print(f"🔍 Búsqueda vectorial: '{query_text}' (k={k}, min_score={min_score})")
-        
-        # Realizar búsqueda vectorial usando RAG service
-        from api.services.rag_service import search_similar_documents
         
         results = search_similar_documents(
             query_text=query_text,
