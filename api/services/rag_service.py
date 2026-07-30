@@ -93,7 +93,7 @@ def _build_pipeline():
     print("✅ Pipeline RAG inicializado con MongoDB Atlas Vector Search.")
 
 def _add_documents_with_retry(splits, max_retries: int = 4):
-    """Indexa documentos en Mongo, reintentando con backoff si Google limita la ráfaga de embeddings."""
+    """Indexa UN lote pequeño en Mongo, reintentando con backoff si Google limita la ráfaga."""
     for attempt in range(max_retries):
         try:
             VECTOR_STORE.add_documents(splits)
@@ -102,9 +102,22 @@ def _add_documents_with_retry(splits, max_retries: int = 4):
             is_rate_limit = "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e)
             if not is_rate_limit or attempt == max_retries - 1:
                 raise
-            wait = (2 ** attempt) * 5  # 5s, 10s, 20s, 40s
+            wait = (2 ** attempt) * 5
             print(f"⏳ Límite de embeddings alcanzado, reintentando en {wait}s (intento {attempt + 1}/{max_retries})")
             time.sleep(wait)
+
+
+def _index_splits_in_batches(splits, batch_size: int = 20, pause_seconds: int = 15):
+    """Indexa documentos grandes en lotes pequeños, con pausa entre lotes,
+    para no exceder el límite de solicitudes por minuto de la API de embeddings."""
+    total = len(splits)
+    for i in range(0, total, batch_size):
+        batch = splits[i:i + batch_size]
+        print(f"📦 Indexando lote {i // batch_size + 1} ({len(batch)} chunks, {i + len(batch)}/{total} en total)")
+        _add_documents_with_retry(batch)
+        # Pausa entre lotes (no después del último) para repartir la carga en el tiempo
+        if i + batch_size < total:
+            time.sleep(pause_seconds)
 
 def _get_file_loader(file_data: BytesIO, filename: str) -> tuple[Union[PyPDFLoader, TextLoader, None], Path]:
     """Retorna el loader adecuado y la ruta del temporal creado."""
