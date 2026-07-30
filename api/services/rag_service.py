@@ -2,6 +2,7 @@
 Service layer for the RAG pipeline.
 """
 import os
+import time
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any, List, Union
@@ -11,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from google.api_core.exceptions import ResourceExhausted
 
 # Importamos la nueva integración para MongoDB
 from langchain_mongodb import MongoDBAtlasVectorSearch
@@ -91,6 +93,18 @@ def _build_pipeline():
     # Nota: Ya no cargamos el PDF inicial aquí. Se cargará vía el nuevo endpoint.
     print("✅ Pipeline RAG inicializado con MongoDB Atlas Vector Search.")
 
+def _add_documents_with_retry(splits, max_retries: int = 4):
+    """Indexa documentos en Mongo, reintentando con backoff si Google limita la ráfaga de embeddings."""
+    for attempt in range(max_retries):
+        try:
+            VECTOR_STORE.add_documents(splits)
+            return
+        except ResourceExhausted:
+            if attempt == max_retries - 1:
+                raise
+            wait = (2 ** attempt) * 5  # 5s, 10s, 20s, 40s
+            print(f"⏳ Límite de embeddings alcanzado, reintentando en {wait}s (intento {attempt + 1}/{max_retries})")
+            time.sleep(wait)
 
 def _get_file_loader(file_data: BytesIO, filename: str) -> tuple[Union[PyPDFLoader, TextLoader, None], Path]:
     """Retorna el loader adecuado y la ruta del temporal creado."""
@@ -142,7 +156,7 @@ def _process_and_index_file(file: FileStorage) -> List[Document]:
 
         # 5. Indexar en MongoDB Atlas
         if splits:
-            VECTOR_STORE.add_documents(splits)
+            _add_documents_with_retry(splits)
             print(f"✅ Indexados {len(splits)} chunks de '{filename}' en MongoDB.")
 
         return splits
