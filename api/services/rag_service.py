@@ -12,7 +12,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from google.api_core.exceptions import ResourceExhausted
 
 # Importamos la nueva integración para MongoDB
 from langchain_mongodb import MongoDBAtlasVectorSearch
@@ -99,8 +98,9 @@ def _add_documents_with_retry(splits, max_retries: int = 4):
         try:
             VECTOR_STORE.add_documents(splits)
             return
-        except ResourceExhausted:
-            if attempt == max_retries - 1:
+        except Exception as e:
+            is_rate_limit = "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e)
+            if not is_rate_limit or attempt == max_retries - 1:
                 raise
             wait = (2 ** attempt) * 5  # 5s, 10s, 20s, 40s
             print(f"⏳ Límite de embeddings alcanzado, reintentando en {wait}s (intento {attempt + 1}/{max_retries})")
